@@ -5,6 +5,14 @@ import { z } from "zod";
 import { Store } from "./store.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// `npm run backfill` does not load .env on its own, so read the repo-local
+// file when present. Real env vars win.
+try {
+  process.loadEnvFile(resolve(root, ".env"));
+} catch (error) {
+  if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+    throw error;
+}
 const integer = z.coerce.number().int().positive();
 const leagueId = integer.parse(process.env.ESPN_LEAGUE_ID ?? 918256829);
 const season = integer.parse(process.env.ESPN_SEASON ?? 2027);

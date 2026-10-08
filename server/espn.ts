@@ -42,17 +42,19 @@ function slotCaps(settings: z.infer<typeof responseSchema>["settings"]) {
 }
 async function getEspn(secretsPath: string, path: string): Promise<unknown> {
   let cookies = "";
+  let cookieCount = 0;
   try {
     const secrets = await readFile(secretsPath, "utf8");
-    cookies = secrets
-      .split("\n")
-      .flatMap((line) => {
-        const match = line.trim().match(/^(espn_s2|swid)\s*=\s*(.*)$/i);
-        if (!match) return [];
-        const key = match[1]?.toLowerCase() === "swid" ? "SWID" : "espn_s2";
-        return [`${key}=${(match[2] ?? "").replace(/^["']|["']$/g, "")}`];
-      })
-      .join("; ");
+    const pairs = secrets.split("\n").flatMap((line) => {
+      const match = line.trim().match(/^(espn_s2|swid)\s*=\s*(.*)$/i);
+      if (!match) return [];
+      const value = (match[2] ?? "").replace(/^["']|["']$/g, "").trim();
+      if (!value) return [];
+      const key = match[1]?.toLowerCase() === "swid" ? "SWID" : "espn_s2";
+      return [`${key}=${value}`];
+    });
+    cookieCount = new Set(pairs.map((pair) => pair.split("=")[0])).size;
+    cookies = pairs.join("; ");
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
       throw new Error("Cannot read ESPN credential file.");
@@ -62,15 +64,44 @@ async function getEspn(secretsPath: string, path: string): Promise<unknown> {
     headers: { Cookie: cookies, "User-Agent": "ProgressTracker/1.0" },
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok)
+  if (!response.ok) {
+    if (response.status === 401 && cookieCount === 0)
+      throw new Error(
+        `ESPN returned HTTP 401 with no cookies sent. Add espn_s2 and SWID to ${secretsPath}.`,
+      );
     throw new Error(
       `ESPN returned HTTP ${response.status}. Check the server-side ESPN cookies if access has expired.`,
     );
+  }
   try {
     return await response.json();
   } catch {
     throw new Error("ESPN returned an invalid response.");
   }
+}
+/** Cookie-file status for startup logs. Reports key names only, never values. */
+export async function espnSecretsStatus(
+  secretsPath: string,
+): Promise<string> {
+  let secrets: string;
+  try {
+    secrets = await readFile(secretsPath, "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return `missing (${secretsPath})`;
+    return `unreadable (${secretsPath})`;
+  }
+  const keys = new Set(
+    secrets.split("\n").flatMap((line) => {
+      const match = line.trim().match(/^(espn_s2|swid)\s*=\s*(.+)$/i);
+      return match?.[1] ? [match[1].toLowerCase()] : [];
+    }),
+  );
+  if (!keys.size) return `empty (${secretsPath})`;
+  const missing = ["espn_s2", "swid"].filter((key) => !keys.has(key));
+  return missing.length
+    ? `partial (missing ${missing.join(", ")}) (${secretsPath})`
+    : `found espn_s2 + SWID (${secretsPath})`;
 }
 export async function fetchEspn(
   leagueId: number,
