@@ -13,6 +13,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
+COPY src ./src
 COPY --from=build /app/node_modules/tsx ./node_modules/tsx
 EXPOSE 3210
 VOLUME ["/app/data"]
