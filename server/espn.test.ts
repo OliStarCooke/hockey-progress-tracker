@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchEspn, fetchRoleDay, fetchSchedule } from "./espn.ts";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  espnSecretsStatus,
+  fetchEspn,
+  fetchRoleDay,
+  fetchSchedule,
+} from "./espn.ts";
 const valid = {
   seasonId: 2027,
   scoringPeriodId: 4,
@@ -101,6 +109,47 @@ test("ESPN boundary accepts valid totals and rejects incomplete, duplicate, wron
   await assert.rejects(
     fetchEspn(918256829, 2027, "/tmp/tracker-nonexistent-cookies"),
     /invalid response/,
+  );
+});
+test("HTTP 401 distinguishes missing cookies from rejected cookies", async (context) => {
+  const dir = mkdtempSync(join(tmpdir(), "tracker-espn-"));
+  const withCookies = join(dir, "with.env");
+  writeFileSync(withCookies, 'espn_s2=dummy\nSWID="{dummy}"\n');
+  const responses = [
+    new Response("Unauthorized", { status: 401 }),
+    new Response("Unauthorized", { status: 401 }),
+  ];
+  context.mock.method(globalThis, "fetch", async () => {
+    const response = responses.shift();
+    if (!response) throw new Error("Unexpected fetch");
+    return response;
+  });
+  await assert.rejects(
+    fetchEspn(918256829, 2027, join(dir, "absent.env")),
+    /HTTP 401 with no cookies sent/,
+  );
+  await assert.rejects(
+    fetchEspn(918256829, 2027, withCookies),
+    /HTTP 401. Check the server-side ESPN cookies if access has expired/,
+  );
+});
+test("the secrets status reports key names without values", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tracker-espn-status-"));
+  const missing = join(dir, "absent.env");
+  const empty = join(dir, "empty.env");
+  const partial = join(dir, "partial.env");
+  const full = join(dir, "full.env");
+  writeFileSync(empty, "# only a comment\nespn_s2=\n");
+  writeFileSync(partial, "espn_s2=dummy\n");
+  writeFileSync(full, 'espn_s2="dummy"\nSWID={dummy}\n');
+  assert.match(await espnSecretsStatus(missing), /^missing \(/);
+  assert.match(await espnSecretsStatus(empty), /^empty \(/);
+  assert.match(await espnSecretsStatus(partial), /^partial \(missing swid\) \(/);
+  assert.match(await espnSecretsStatus(full), /^found espn_s2 \+ SWID \(/);
+  assert.doesNotMatch(
+    await espnSecretsStatus(full),
+    /dummy/,
+    "status must never leak cookie values",
   );
 });
 test("a scoring day sums actual stats by capped lineup slot and ignores the bench", async (context) => {

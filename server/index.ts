@@ -3,12 +3,26 @@ import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 import { z } from "zod";
 import { Store } from "./store.ts";
-import { BENCH_SLOT, fetchEspn, fetchRoleDay, fetchSchedule } from "./espn.ts";
+import {
+  BENCH_SLOT,
+  espnSecretsStatus,
+  fetchEspn,
+  fetchRoleDay,
+  fetchSchedule,
+} from "./espn.ts";
 import { reconcileRoles, roleSummary } from "./roles.ts";
 import { clientFilter } from "./network.ts";
 import { collectLive } from "./live.ts";
 import { syncDelay } from "./schedule.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// `npm start` / `npm run dev` do not load .env on their own (Docker passes env
+// directly), so read the repo-local file when present. Real env vars win.
+try {
+  process.loadEnvFile(resolve(root, ".env"));
+} catch (error) {
+  if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+    throw error;
+}
 const integer = z.coerce.number().int().positive();
 const port = integer.max(65535).parse(process.env.PORT ?? 3210);
 const leagueId = integer.parse(process.env.ESPN_LEAGUE_ID ?? 918256829);
@@ -27,7 +41,7 @@ const intervalMinutes = z.coerce
   .parse(process.env.SYNC_INTERVAL_MINUTES ?? 5);
 const secretsPath = resolve(
   root,
-  process.env.ESPN_SECRETS_PATH ?? "../.secrets/espn.env",
+  process.env.ESPN_SECRETS_PATH ?? ".secrets/espn.env",
 );
 const store = new Store(
   resolve(root, process.env.DATA_DIR ?? "data", `${leagueId}-${season}.sqlite`),
@@ -254,9 +268,10 @@ if (process.argv.includes("--dev")) {
     res.sendFile(resolve(root, "dist/index.html")),
   );
 }
-const server = app.listen(port, process.env.HOST ?? "127.0.0.1", () =>
-  console.log(`Progress tracker: http://localhost:${port}`),
-);
+const server = app.listen(port, process.env.HOST ?? "127.0.0.1", async () => {
+  console.log(`Progress tracker: http://localhost:${port}`);
+  console.log(`ESPN cookies: ${await espnSecretsStatus(secretsPath)}`);
+});
 let timer: ReturnType<typeof setTimeout>;
 let stopping = false;
 function schedule() {
