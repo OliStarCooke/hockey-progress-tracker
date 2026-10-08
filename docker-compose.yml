@@ -1,0 +1,21 @@
+services:
+  tracker:
+    build: .
+    image: hockey-progress-tracker:latest
+    container_name: hockey-progress-tracker
+    ports:
+      - "${PORT:-3210}:3210"
+    env_file:
+      - .env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3210"
+    volumes:
+      - tracker-data:/app/data
+      # Optional ESPN cookies for private leagues (read-only, gitignored).
+      # Remove this line if your league is public.
+      - ./.secrets/espn.env:/app/.secrets/espn.env:ro
+    restart: unless-stopped
+
+volumes:
+  tracker-data:
