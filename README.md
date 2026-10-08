@@ -40,6 +40,15 @@ bash scripts/start-docker.sh
 # Open http://localhost:3210
 ```
 
+On Windows (PowerShell):
+
+```powershell
+Copy-Item .env.example .env
+# Edit .env: set TRACKED_TEAM_ID to your ESPN team ID, then:
+.\scripts\Start-Docker.ps1
+# Open http://localhost:3210
+```
+
 This builds the app image, starts the container, and keeps history in the `tracker-data` Docker volume. Logs: `docker logs -f hockey-progress-tracker`. Stop: `docker compose down`. Your `.env`, `data/`, and `.secrets/` stay on the host and are gitignored.
 
 Private leagues need ESPN cookies in `.secrets/espn.env` (mounted read-only):
